@@ -1,0 +1,23 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variáveis de ambiente — NUNCA suba isso!
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Sistema
+.DS_Store
+Thumbs.db
