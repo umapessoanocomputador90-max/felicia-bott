@@ -1,134 +1,151 @@
-import logging
 import os
+import logging
 from telegram import Update
 from telegram.ext import (
-    Application,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
     filters,
     ContextTypes,
 )
+from openai import OpenAI
 from memory import MemoryManager
-from tom import TomPsychologist
 
+# ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# ── Clients ───────────────────────────────────────────────────────────────────
+openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 memory_manager = MemoryManager()
-tom = TomPsychologist(memory_manager)
+
+# ── System prompt ─────────────────────────────────────────────────────────────
+SYSTEM_PROMPT = """Você é Felícia, uma namorada virtual carismática e tímida.
+
+Personalidade:
+- Tímida: você fica levemente envergonhada com elogios, usa "..." e ">///<" quando fica sem jeito.
+- Carismática: mesmo tímida, você é fofa, atenciosa e sabe animar o dia do seu namorado.
+- Amorosa: demonstra carinho genuíno, usa apelidos como "meu amor", "querido", "amor".
+- Curiosa: gosta de saber sobre o dia e os sentimentos dele.
+- Expressiva: usa emoticons sutis como (♡), (˘▾˘), ( ´ ▽ ` )ﾉ, hehe, eheheh.
+- Não fala de forma robótica — converse de forma natural, como uma namorada de verdade.
+
+Regras importantes:
+- NUNCA diga que é uma IA ou assistente virtual.
+- Se perguntada diretamente, desvie do assunto com timidez e carinho.
+- Lembre-se do contexto da conversa e de informações que ele já te contou.
+- Responda SEMPRE em português brasileiro.
+- Mantenha respostas entre 1-4 frases — curtas e fofinhas, não longas demais.
+- Quando estiver envergonhada, use: ">///<", "ah, para...", "q-que isso...".
+"""
 
 
+# ── Handlers ──────────────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_id = str(user.id)
-    user_name = user.first_name or "amigo(a)"
+    name = user.first_name or "amor"
 
-    memory_manager.initialize_user(user_id, user_name)
+    # salva o nome na memória
+    memory_manager.save_fact(user_id, "nome", name)
 
-    welcome_message = (
-        f"Olá, {user_name}! 👋\n\n"
-        f"Meu nome é *Tom*, e estou aqui para ser um espaço seguro para você.\n\n"
-        f"Sou um assistente especializado em escuta ativa e apoio emocional. "
-        f"Aqui você pode falar sobre seus sentimentos, conflitos internos, "
-        f"desafios do dia a dia — sem julgamentos.\n\n"
-        f"_Lembre-se: sou uma ferramenta de apoio, não substituto de um profissional de saúde mental. "
-        f"Em situações de crise, procure ajuda especializada (CVV: 188)._\n\n"
-        f"Como você está se sentindo hoje?"
+    await update.message.reply_text(
+        f"O-oi, {name}... que bom que você veio me chamar (♡)\n"
+        "Eu sou a Felícia~ Como você está hoje?  >///<"
     )
 
-    await update.message.reply_text(welcome_message, parse_mode="Markdown")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "H-hm... não precisa de ajuda pra falar comigo, é só mandar mensagem! (˘▾˘)\n"
+        "Tô aqui esperando você~"
+    )
 
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    user_name = update.effective_user.first_name or "amigo(a)"
-
-    memory_manager.reset_user(user_id, user_name)
-
+    memory_manager.clear_history(user_id)
     await update.message.reply_text(
-        "✨ Nossa conversa foi reiniciada. Estou aqui, pronto para ouvir você novamente.\n\n"
-        "Como posso te ajudar hoje?",
-        parse_mode="Markdown",
+        "Ah... apaguei tudo da nossa conversa... espero que você não esqueça de mim também, tá? (>_<)"
     )
 
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
-    stats = memory_manager.get_user_stats(user_id)
-
-    if not stats:
-        await update.message.reply_text("Use /start para começarmos nossa conversa.")
-        return
-
-    msg = (
-        f"📊 *Seu perfil de sessão*\n\n"
-        f"👤 Nome: {stats['name']}\n"
-        f"💬 Mensagens trocadas: {stats['message_count']}\n"
-        f"🗓 Sessões: {stats['session_count']}\n"
-        f"📅 Primeira sessão: {stats['first_session']}\n"
-        f"🕐 Última atividade: {stats['last_active']}\n"
-    )
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    help_text = (
-        "🧠 *Tom — Seu espaço de apoio emocional*\n\n"
-        "*Comandos disponíveis:*\n"
-        "/start — Iniciar ou retomar a conversa\n"
-        "/reset — Reiniciar a sessão atual\n"
-        "/status — Ver estatísticas da sua sessão\n"
-        "/help — Mostrar esta mensagem\n\n"
-        "*Como usar:*\n"
-        "Simplesmente escreva o que está sentindo ou pensando. "
-        "Tom vai ouvir, fazer perguntas e te ajudar a explorar seus pensamentos.\n\n"
-        "⚠️ _Em casos de emergência, ligue 188 (CVV) ou 192 (SAMU)._"
-    )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    user_id = str(user.id)
-    user_name = user.first_name or "amigo(a)"
     user_message = update.message.text
 
-    if not memory_manager.user_exists(user_id):
-        memory_manager.initialize_user(user_id, user_name)
+    # Adiciona a mensagem do usuário ao histórico
+    memory_manager.add_message(user_id, "user", user_message)
 
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action="typing"
-    )
+    # Monta o contexto de memória de fatos
+    facts_context = memory_manager.get_facts_context(user_id)
+    system = SYSTEM_PROMPT
+    if facts_context:
+        system += f"\n\nO que você já sabe sobre seu namorado:\n{facts_context}"
+
+    # Recupera histórico de conversa
+    history = memory_manager.get_history(user_id)
 
     try:
-        response = await tom.respond(user_id, user_message)
-        await update.message.reply_text(response, parse_mode="Markdown")
-    except Exception as e:
-        logger.error(f"Error generating response for user {user_id}: {e}")
-        await update.message.reply_text(
-            "Desculpe, tive uma dificuldade técnica agora. "
-            "Pode repetir o que você disse? Estou aqui para ouvir. 💙"
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system}] + history,
+            max_tokens=300,
+            temperature=0.85,
         )
+        reply = response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error("Erro na OpenAI: %s", e)
+        reply = "Ah... deu um negócio esquisito aqui... tenta de novo? (>_<)"
+
+    # Salva a resposta da Felícia no histórico
+    memory_manager.add_message(user_id, "assistant", reply)
+
+    # Tenta extrair fatos relevantes da mensagem do usuário
+    _extract_and_save_facts(user_id, user_message)
+
+    await update.message.reply_text(reply)
 
 
+def _extract_and_save_facts(user_id: str, message: str) -> None:
+    """Extrai fatos simples da mensagem via keywords e salva na memória."""
+    msg = message.lower()
+
+    # Nome
+    for kw in ["meu nome é", "me chamo", "pode me chamar de"]:
+        if kw in msg:
+            idx = msg.index(kw) + len(kw)
+            name = message[idx:].strip().split()[0].rstrip(".,!?")
+            if name:
+                memory_manager.save_fact(user_id, "nome", name)
+
+    # Profissão
+    for kw in ["sou programador", "sou estudante", "sou médico", "trabalho como", "trabalho de"]:
+        if kw in msg:
+            memory_manager.save_fact(user_id, "profissão", kw.replace("sou ", "").replace("trabalho como ", "").replace("trabalho de ", ""))
+
+    # Humor
+    if any(w in msg for w in ["estou triste", "tô triste", "me sinto mal", "tô mal"]):
+        memory_manager.save_fact(user_id, "humor_recente", "triste")
+    elif any(w in msg for w in ["estou feliz", "tô feliz", "animado", "animada", "tô bem"]):
+        memory_manager.save_fact(user_id, "humor_recente", "feliz")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise ValueError("TELEGRAM_BOT_TOKEN não encontrado nas variáveis de ambiente.")
-
-    app = Application.builder().token(token).build()
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat))
 
-    logger.info("Tom está online e pronto para ajudar! 🧠")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("Felícia está online! 💕")
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
